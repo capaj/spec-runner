@@ -15,7 +15,30 @@
     "onLanguage:javascriptreact"
   ],
   "main": "./extension",
-  "contributes": {},
+  "contributes": {
+    "commands": [
+      {
+        "title": "Open spec file",
+        "category": "specrunner",
+        "command": "spec-runner.openSpec"
+      },
+      {
+        "title": "Generate a spec file",
+        "category": "specrunner",
+        "command": "spec-runner.generateASpec"
+      },
+      {
+        "title": "Create '.specrunner.json' File",
+        "category": "specrunner",
+        "command": "spec-runner.createConfig"
+      },
+      {
+        "title": "Show Output Channel",
+        "category": "specrunner",
+        "command": "spec-runner.showOutputChannel"
+      }
+    ]
+  },
   "scripts": {
     "postinstall": "node ./node_modules/vscode/bin/install",
     "pretest": "standard",
@@ -31,6 +54,7 @@
     "vscode": "^1.0.0"
   },
   "dependencies": {
+    "escape-string-regexp": "^1.0.5",
     "mz": "^2.6.0"
   }
 }
