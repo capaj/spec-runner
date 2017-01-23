@@ -1,8 +1,7 @@
 const vscode = require('vscode')
 const {
-  // StatusBarItem,
-  StatusBarAlignment,
   window,
+  commands,
   workspace,
   Range
 } = vscode
@@ -10,139 +9,221 @@ const path = require('path')
 const fs = require('mz/fs')
 const {spawn} = require('child_process')
 const escapeRegExp = require('escape-string-regexp')
-let suffix = 'spec.js'
+const {
+  getSpecFileName,
+  setSuffix
+} = require('./lib/filename-utils')
 
-function getSpecFileName (file) {
-  if (file.endsWith(suffix)) {
-    return file
-  }
-  const ext = path.extname(file)
-  return file.substring(0, file.length - ext.length) + '.' + suffix
-}
+const generateSpecCommand = require('./lib/generate-spec')
+const StatusBar = require('./lib/status-bar')
+
 let outputChannel
-let statusBarItem
-let lastDecoration
+let statusBar
+const lastDecorations = []
+const disposeDecorations = () => {
+  lastDecorations.forEach((decoration) => decoration.dispose())
+  lastDecorations.length = 0
+}
+let testProcess
+
+const failToken = 'failed'
 
 function activate (context) {
   if (!workspace.rootPath) {
     return
   }
-  statusBarItem = window.createStatusBarItem(StatusBarAlignment.Right, 1000)
+  statusBar = new StatusBar()
 
   let lastFile
   let lastSpecFile
-  let testProcess
   outputChannel = window.createOutputChannel('specrunner')
   fs.readFile(path.join(workspace.rootPath, 'package.json'), 'utf8')
     .then(JSON.parse)
     .then((pckg) => {
       const { jest, ava } = pckg.devDependencies
-      if (pckg.specRunner) {
-        suffix = pckg.specRunner.suffix
+      if (pckg.specRunner && pckg.specRunner.suffix) {
+        setSuffix(pckg.specRunner.suffix)
       }
       let testRunner
-      if (ava) {
+
+      if (pckg.scripts && pckg.scripts.specrun) {
+        testRunner = 'npm'
+      } else if (ava) {
         testRunner = 'ava'
       } else if (jest) {
         testRunner = 'jest'
       }
+
       const runSpecIfExists = (file) => {
         const isJSFile = file.endsWith('.js') || file.endsWith('.jsx')
         if (!isJSFile) {
-          statusBarItem.hide()
+          statusBar.hide()
           return
         }
-        statusBarItem.text = 'No spec'
+        statusBar.reset()
         if (lastFile === file) {
           return
         }
-        lastDecoration && lastDecoration.dispose()
-        statusBarItem.show()
+        disposeDecorations()
+        statusBar.show()
         testProcess && testProcess.kill()
         lastFile = file
         lastSpecFile = getSpecFileName(file)
-        let basename
         let args
         if (testRunner === 'jest') {
-          basename = path.basename(file, path.extname(file))
-          args = [basename, '-w']
+          args = [lastSpecFile, '--watch', '--bail', '--json', '--no-colors']
+        } else if (testRunner === 'ava') {
+          args = [lastSpecFile, '-w', '--verbose', '--fail-fast']
         } else {
-          basename = path.basename(lastSpecFile)
-          args = [basename, '-w', '--verbose', '--fail-fast']
+          args = ['run', 'specrun', lastSpecFile] // custom tdd script
         }
 
         return fs.stat(lastSpecFile).then((stats) => {
-          testProcess = spawn(testRunner, args, {cwd: workspace.rootPath})
-          testProcess.stdout.on('data', (data) => {
-            const msg = data.toString()
-            outputChannel.append(msg)
+          testProcess = spawn(testRunner, args, {
+            cwd: workspace.rootPath
           })
+          statusBar.setRunning()
+          const receivedToken = 'Difference:\n'
 
-          testProcess.stderr.on('data', (data) => {
-            const msg = data.toString()
+          const decorateErroredLine = (outputAfterError) => {
+            const firstNewLine = outputAfterError.indexOf('\n')
+            let errorMessage
+            const indexOfDifference = outputAfterError.indexOf(receivedToken)
+            if (indexOfDifference !== -1) {
+              errorMessage = outputAfterError.substr(indexOfDifference)
+              const lines = errorMessage.split('\n').filter((line) => {
+                return line.includes(' +  ') || line.includes(' -  ')
+              })
+              errorMessage = lines.join(' ')
+              errorMessage = errorMessage.replace('- ', 'Expected: ')
+              errorMessage = errorMessage.replace('+ ', 'Received: ')
+            } else {
+              errorMessage = outputAfterError.replace(/(?:\r\n|\r|\n)/g, ' ')
+            }
 
-            outputChannel.append(msg)
-            if (msg.includes('failed')) {
-              lastDecoration && lastDecoration.dispose()
-
-              statusBarItem.text = 'Spec failing'
-              statusBarItem.color = 'red'
-              const indexOfErr = msg.lastIndexOf('Error: ')
-              if (indexOfErr !== -1) {
-                const outputAfterError = msg.substring(indexOfErr + 7)
-                const firstNewLine = outputAfterError.indexOf('\n')
-                const errorMessage = outputAfterError.substring(0, firstNewLine)
-                const fileBasename = escapeRegExp(path.basename(file))
+            window.visibleTextEditors.forEach((editor) => {
+              const setErrorDecorations = (visibleFile) => {
+                const fileBasename = escapeRegExp(path.basename(visibleFile))
 
                 const fileRegex = new RegExp(`${fileBasename}:(\\d*):(\\d*)`, 'g')
-                const fileMatches = fileRegex.exec(outputAfterError.substring(firstNewLine))
+
+                let fileMatches = fileRegex.exec(outputAfterError.substring(firstNewLine))
+                if (!fileMatches) {
+                  fileMatches = fileRegex.exec(outputAfterError)
+                }
+
                 if (fileMatches) {
                   const line = Number(fileMatches[1]) - 1
                   const decoration = vscode.window.createTextEditorDecorationType({
                     isWholeLine: true,
                     backgroundColor: `rgba(255,0,0, 0.5)`,
                     after: {
-                      contentText: ` ${errorMessage.replace(/'/g, '"')}`,
+                      contentText: ` ${errorMessage.replace(/'/g, '"')}`, // TODO remove when bug is resolved https://github.com/Microsoft/vscode/issues/19008
                       color: 'rgba(1, 1, 1, 1.0)'
                     }
                   })
-                  lastDecoration = decoration
+                  lastDecorations.push(decoration)
                   const range = new Range(line, 0, line, 1000)
-                  window.activeTextEditor.setDecorations(decoration, [range])
+                  editor.setDecorations(decoration, [range])
                 }
               }
+
+              const {fileName} = editor.document
+              setErrorDecorations(fileName)
+            })
+          }
+
+          testProcess.stdout.on('data', (data) => {
+            const msg = data.toString()
+            if (msg.startsWith('{')) {
+              const newLineIndex = msg.indexOf('\n')
+              let jsonString = msg
+              if (newLineIndex !== -1) {
+                jsonString = msg.substr(0, newLineIndex)
+              }
+              const output = JSON.parse(jsonString)
+              if (output.numFailedTests === 0 && output.numFailedTestSuites === 0) {
+                statusBar.setPassing()
+              } else {
+                let message = output.testResults[0].message
+                statusBar.setFailing(message.substr(0, message.indexOf('\n')))
+                message = message.substr(message.indexOf('\n') + 2)
+                decorateErroredLine(message)
+              }
             } else {
-              statusBarItem.text = 'Passing'
-              statusBarItem.color = 'greenyellow'
+              outputChannel.append(msg)
+            }
+          })
+          testProcess.stderr.on('data', (data) => {
+            const msg = data.toString()
+
+            outputChannel.append(msg)
+            if (ava) {
+              if (msg.includes(failToken)) {
+                disposeDecorations()
+
+                statusBar.setFailing()
+                let indexOfErr = msg.lastIndexOf('Error')
+                if (indexOfErr !== -1) {
+                  const outputAfterError = msg.substring(indexOfErr + 7)
+                  decorateErroredLine(outputAfterError)
+                }
+              } else {
+                statusBar.setPassing()
+              }
             }
           })
 
           testProcess.on('exit', (code) => {
             outputChannel.append(`Child exited with code ${code}`)
           })
+          testProcess.on('error', (err) => {
+            console.error(err)
+          })
         }, () => {})
       }
 
-      statusBarItem.command = 'spec.showOutputChannel'
       runSpecIfExists(window.activeTextEditor.document.fileName)
       window.onDidChangeActiveTextEditor((editor) => {
-        runSpecIfExists(editor.document.fileName)
+        if (editor.document.languageId !== 'testOutput') {
+          runSpecIfExists(editor.document.fileName)
+        }
       })
 
       workspace.onDidSaveTextDocument((textDocument) => {
-        lastDecoration && lastDecoration.dispose()
+        disposeDecorations()
+        statusBar.setRunning()
         // runSpecIfExists(textDocument.fileName)
       })
     }).catch((err) => {
       throw err
     })
+
+  context.subscriptions.push(
+    commands.registerCommand('spec-runner.showOutputChannel', () => {
+      outputChannel.show()
+      statusBar.show()
+    }),
+    commands.registerCommand('spec-runner.generateASpec', generateSpecCommand),
+    commands.registerCommand('spec-runner.openSpec', () => {
+      const {fileName} = window.activeTextEditor.document
+
+      const specPath = getSpecFileName(fileName)
+      workspace.openTextDocument(specPath).then((document) => {
+        window.showTextDocument(document).then((editor) => {
+
+        })
+      })
+    })
+  )
 }
 exports.activate = activate
 
 // this method is called when your extension is deactivated
 function deactivate () {
+  testProcess && testProcess.kill()
   outputChannel.dispose()
-  statusBarItem.dispose()
-  lastDecoration && lastDecoration.dispose()
+  statusBar.dispose()
+  lastDecorations && lastDecorations.dispose()
 }
 exports.deactivate = deactivate

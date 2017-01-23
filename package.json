@@ -14,6 +14,7 @@
     "onLanguage:javascript",
     "onLanguage:javascriptreact"
   ],
+  "icon": "imgs/tdd-circle-of-life.png.png",
   "main": "./extension",
   "contributes": {
     "commands": [
@@ -23,19 +24,14 @@
         "command": "spec-runner.openSpec"
       },
       {
-        "title": "Generate a spec file",
-        "category": "specrunner",
-        "command": "spec-runner.generateASpec"
-      },
-      {
-        "title": "Create '.specrunner.json' File",
-        "category": "specrunner",
-        "command": "spec-runner.createConfig"
-      },
-      {
         "title": "Show Output Channel",
         "category": "specrunner",
         "command": "spec-runner.showOutputChannel"
+      },
+      {
+        "title": "Generate a spec file",
+        "category": "specrunner",
+        "command": "spec-runner.generateASpec"
       }
     ]
   },
@@ -55,6 +51,7 @@
   },
   "dependencies": {
     "escape-string-regexp": "^1.0.5",
+    "get-exports-from-file": "^0.3.1",
     "mz": "^2.6.0"
   }
 }
