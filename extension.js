@@ -159,7 +159,7 @@ function activate (context) {
 
             outputChannel.append(msg)
             if (ava) {
-              if (msg.includes(failToken)) {
+              if (msg.includes(failToken) || msg.includes('✖')) {
                 disposeDecorations()
 
                 statusBar.setFailing()
