@@ -13,6 +13,7 @@ const {
   getSpecFileName,
   setSuffix
 } = require('./lib/filename-utils')
+const config = workspace.getConfiguration('vscode-exports-autocomplete')
 
 const generateSpecCommand = require('./lib/generate-spec')
 const StatusBar = require('./lib/status-bar')
@@ -182,19 +183,22 @@ function activate (context) {
           })
         }, () => {})
       }
+      if (config.runnnerEnabled) {
+        runSpecIfExists(window.activeTextEditor.document.fileName)
+        window.onDidChangeActiveTextEditor((editor) => {
+          if (editor.document.languageId !== 'testOutput') {
+            runSpecIfExists(editor.document.fileName)
+          }
+        })
 
-      runSpecIfExists(window.activeTextEditor.document.fileName)
-      window.onDidChangeActiveTextEditor((editor) => {
-        if (editor.document.languageId !== 'testOutput') {
-          runSpecIfExists(editor.document.fileName)
-        }
-      })
-
-      workspace.onDidSaveTextDocument((textDocument) => {
-        disposeDecorations()
-        statusBar.setRunning()
-        // runSpecIfExists(textDocument.fileName)
-      })
+        workspace.onDidSaveTextDocument((textDocument) => {
+          disposeDecorations()
+          statusBar.setRunning()
+          // runSpecIfExists(textDocument.fileName)
+        })
+      } else {
+        statusBar.hide()
+      }
     }).catch((err) => {
       throw err
     })

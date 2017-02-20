@@ -2,7 +2,7 @@
   "name": "spec-runner",
   "displayName": "spec-runner",
   "description": " plugin for running specs while editing",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "capaj",
   "engines": {
     "vscode": "^1.5.0"
@@ -23,6 +23,17 @@
   "icon": "imgs/tdd-circle-of-life.png",
   "main": "./extension",
   "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "spec-runner",
+      "properties": {
+        "spec-runner.runnnerEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "set to false to disable the background test runner"
+        }
+      }
+    },
     "commands": [
       {
         "title": "Open spec file",
