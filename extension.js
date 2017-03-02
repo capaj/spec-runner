@@ -186,7 +186,7 @@ function activate (context) {
       if (config.runnnerEnabled) {
         runSpecIfExists(window.activeTextEditor.document.fileName)
         window.onDidChangeActiveTextEditor((editor) => {
-          if (editor.document.languageId !== 'testOutput') {
+          if (editor && editor.document.languageId !== 'testOutput') {
             runSpecIfExists(editor.document.fileName)
           }
         })
