@@ -2,7 +2,7 @@
   "name": "spec-runner",
   "displayName": "spec-runner",
   "description": " plugin for running specs while editing",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "capaj",
   "engines": {
     "vscode": "^1.5.0"
